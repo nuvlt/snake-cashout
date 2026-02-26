@@ -1,0 +1,407 @@
+/* ===========================
+   SNAKE CASHOUT – style.css
+   =========================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap');
+
+:root {
+  --bg: #1a1a2e;
+  --panel: #16213e;
+  --panel2: #0f3460;
+  --accent: #4ecca3;
+  --accent2: #f5a623;
+  --danger: #e94560;
+  --success: #4ecca3;
+  --text: #eaeaea;
+  --text-muted: #8899aa;
+  --snake-head: #56d364;
+  --snake-body: #3fb950;
+  --food1: #f85149;
+  --food2: #ffa657;
+  --radius: 16px;
+  --shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  font-family: 'Nunito', sans-serif;
+  color: var(--text);
+  overflow-x: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(78,204,163,0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 80%, rgba(233,69,96,0.08) 0%, transparent 60%),
+    var(--bg);
+}
+
+#app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 16px;
+}
+
+/* ─── HEADER ─── */
+#header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.header-logo {
+  font-family: 'Fredoka One', cursive;
+  font-size: 1.1rem;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+.header-logo span { color: var(--text); }
+
+.header-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.balance-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+#balance-display {
+  font-family: 'Fredoka One', cursive;
+  font-size: 1.15rem;
+  color: var(--accent2);
+  transition: color 0.3s;
+}
+#balance-display.blink-green { animation: blinkGreen 0.5s; }
+#balance-display.blink-red { animation: blinkRed 0.5s; }
+
+.icon-btn {
+  background: rgba(255,255,255,0.06);
+  border: none;
+  border-radius: 50%;
+  width: 36px; height: 36px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s;
+}
+.icon-btn:hover { background: rgba(255,255,255,0.12); transform: scale(1.1); }
+
+/* ─── MULTIPLIER BANNER ─── */
+#multiplier-banner {
+  text-align: center;
+  padding: 16px 16px 8px;
+}
+#multiplier-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+#multiplier-value {
+  font-family: 'Fredoka One', cursive;
+  font-size: 3.2rem;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 0 30px rgba(78,204,163,0.5);
+  transition: color 0.2s, text-shadow 0.2s;
+  will-change: transform;
+}
+#multiplier-value.pulse {
+  animation: multPulse 0.15s ease-out;
+}
+#multiplier-value.danger-mult {
+  color: var(--danger);
+  text-shadow: 0 0 30px rgba(233,69,96,0.6);
+}
+#multiplier-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  height: 18px;
+}
+
+/* ─── CANVAS ─── */
+#canvas-wrapper {
+  position: relative;
+  margin: 8px 16px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #0e2235;
+  box-shadow: var(--shadow), inset 0 0 0 2px rgba(78,204,163,0.15);
+  flex-shrink: 0;
+}
+
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+
+/* overlay */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  backdrop-filter: blur(6px);
+  transition: opacity 0.3s;
+}
+.overlay.hidden { opacity: 0; pointer-events: none; }
+.overlay.crash-overlay { background: rgba(233,69,96,0.25); }
+.overlay.cashout-overlay { background: rgba(78,204,163,0.2); }
+
+#overlay-icon { font-size: 3rem; margin-bottom: 8px; }
+#overlay-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: 1.8rem;
+  margin-bottom: 4px;
+}
+#overlay-detail { font-size: 1rem; color: var(--text-muted); }
+
+/* ─── CONTROLS ─── */
+#controls {
+  padding: 10px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bet-row {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.bet-row label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 8px;
+}
+.bet-input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.bet-adj {
+  background: rgba(255,255,255,0.08);
+  border: none;
+  border-radius: 10px;
+  width: 38px; height: 38px;
+  font-size: 1.3rem;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+.bet-adj:hover { background: var(--accent); color: #000; transform: scale(1.05); }
+.bet-adj:active { transform: scale(0.95); }
+
+#bet-input {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: 'Fredoka One', cursive;
+  font-size: 1.4rem;
+  text-align: center;
+  padding: 6px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+#bet-input:focus { border-color: var(--accent); }
+#bet-input::-webkit-outer-spin-button,
+#bet-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+.bet-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.preset-btn {
+  flex: 1;
+  min-width: 42px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 5px 2px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.preset-btn:hover, .preset-btn.active {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+
+/* action buttons */
+.action-row {
+  display: flex;
+  gap: 10px;
+}
+.action-btn {
+  flex: 1;
+  border: none;
+  border-radius: 14px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 1.05rem;
+  letter-spacing: 0.5px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.action-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0);
+  transition: background 0.15s;
+}
+.action-btn:active::after { background: rgba(255,255,255,0.12); }
+
+.start-btn {
+  background: linear-gradient(135deg, #4ecca3, #38b28a);
+  color: #000;
+  box-shadow: 0 4px 20px rgba(78,204,163,0.35);
+}
+.start-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 28px rgba(78,204,163,0.5);
+}
+.start-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+.cashout-btn {
+  background: linear-gradient(135deg, #f5a623, #e8830a);
+  color: #000;
+  box-shadow: 0 4px 20px rgba(245,166,35,0.35);
+  animation: none;
+}
+.cashout-btn:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 28px rgba(245,166,35,0.5);
+}
+.cashout-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+.cashout-btn.glow {
+  animation: cashoutGlow 1s ease-in-out infinite alternate;
+}
+
+/* util row */
+.util-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.util-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.8rem;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.util-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.swipe-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+/* ─── STATS BAR ─── */
+#stats-bar {
+  display: flex;
+  justify-content: space-around;
+  margin: 10px 16px 0;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  padding: 10px;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.stat-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+}
+.stat span:last-child {
+  font-family: 'Fredoka One', cursive;
+  font-size: 1.1rem;
+  color: var(--text);
+}
+
+/* ─── KEYFRAMES ─── */
+@keyframes blinkGreen {
+  0%,100% { color: var(--accent2); }
+  50% { color: var(--success); }
+}
+@keyframes blinkRed {
+  0%,100% { color: var(--accent2); }
+  50% { color: var(--danger); }
+}
+@keyframes multPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+@keyframes cashoutGlow {
+  from { box-shadow: 0 4px 20px rgba(245,166,35,0.35); }
+  to   { box-shadow: 0 4px 40px rgba(245,166,35,0.75); }
+}
+@keyframes overlayIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.overlay:not(.hidden) {
+  animation: overlayIn 0.3s ease-out;
+}
+
+/* ─── RESPONSIVE ─── */
+@media (min-width: 480px) {
+  #app { padding: 0 0 24px; }
+}
+
+@media (max-width: 360px) {
+  #multiplier-value { font-size: 2.6rem; }
+  .action-btn { font-size: 0.95rem; padding: 12px; }
+}
