@@ -11,7 +11,11 @@
 
     <!-- Header -->
     <header id="header">
-      <div class="header-logo">🐍 <span>SNAKE CASHOUT</span></div>
+      <div class="header-logo">
+        <span class="logo-snake">🐍</span>
+        <span class="logo-text-snake">SNAKE</span>
+        <span class="logo-text-rest">&nbsp;CASHOUT</span>
+      </div>
       <div class="header-balance">
         <span class="balance-label">Balance</span>
         <span id="balance-display">1,000 TL</span>
@@ -29,6 +33,18 @@
     <!-- Canvas -->
     <div id="canvas-wrapper">
       <canvas id="game-canvas"></canvas>
+
+      <!-- Combo streak dots (top-right corner) -->
+      <div id="combo-streak">
+        <div class="streak-dot" id="dot-1"></div>
+        <div class="streak-dot" id="dot-2"></div>
+        <div class="streak-dot" id="dot-3"></div>
+      </div>
+
+      <!-- Combo badge popup -->
+      <div id="combo-badge">🔥 COMBO! +0.15x</div>
+
+      <!-- End-of-round overlay -->
       <div id="overlay" class="overlay hidden">
         <div id="overlay-icon"></div>
         <div id="overlay-title"></div>
@@ -38,7 +54,7 @@
 
     <!-- Controls -->
     <div id="controls">
-      <div class="bet-row">
+      <div class="bet-row glass-card">
         <label for="bet-input">Bet Amount (TL)</label>
         <div class="bet-input-group">
           <button class="bet-adj" id="btn-minus">−</button>
@@ -61,19 +77,31 @@
 
       <div class="util-row">
         <button id="btn-reset" class="util-btn">↺ Reset Balance</button>
-        <div id="swipe-hint" class="swipe-hint">Swipe to steer on mobile</div>
+        <div id="swipe-hint" class="swipe-hint">↑↓←→ or swipe to steer</div>
       </div>
     </div>
 
     <!-- Stats Bar -->
     <div id="stats-bar">
-      <div class="stat"><span class="stat-label">Current Bet</span><span id="stat-bet">—</span></div>
-      <div class="stat"><span class="stat-label">Score</span><span id="stat-score">0</span></div>
-      <div class="stat"><span class="stat-label">Best</span><span id="stat-best">0</span></div>
+      <div class="stat">
+        <span class="stat-label">Current Bet</span>
+        <span id="stat-bet">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Score</span>
+        <span id="stat-score">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Best</span>
+        <span id="stat-best">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Combos</span>
+        <span id="stat-combos">0</span>
+      </div>
     </div>
 
   </div>
-
   <script src="script.js"></script>
 </body>
 </html>
