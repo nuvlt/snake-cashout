@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -8,51 +8,72 @@
 </head>
 <body>
 
-  <!-- CRT scanline overlay -->
-  <div id="crt-overlay"></div>
+  <!-- CRT tarama çizgileri -->
+  <div id="scanlines"></div>
 
   <div id="app">
 
-    <!-- Header -->
+    <!-- Kayan başlık şeridi -->
     <header id="header">
-      <div class="header-logo">
-        <span class="logo-icon">👾</span>
-        <span class="logo-main">SNAKE</span>
-        <span class="logo-sub">CASHOUT</span>
+      <div id="marquee-wrap">
+        <div id="marquee-text">
+          ★ SNAKE CASHOUT ★ &nbsp;&nbsp;&nbsp;
+          OYNAMAK İÇİN BAHİS GİR &nbsp;&nbsp;&nbsp;
+          EN YÜKSEK SKOR: <span id="hiscore-marquee">0</span> &nbsp;&nbsp;&nbsp;
+          ★ SNAKE CASHOUT ★ &nbsp;&nbsp;&nbsp;
+          OYNAMAK İÇİN BAHİS GİR &nbsp;&nbsp;&nbsp;
+        </div>
       </div>
-      <div class="header-balance">
-        <span class="balance-label">CREDITS</span>
-        <span id="balance-display">1000 TL</span>
-      </div>
-      <button id="sound-toggle" class="icon-btn">SFX:ON</button>
     </header>
 
-    <!-- Multiplier -->
-    <div id="multiplier-banner">
-      <div id="multiplier-label">✦ MULTIPLIER ✦</div>
-      <div id="multiplier-value">1.00x</div>
-      <div id="multiplier-sub">INSERT COIN TO PLAY</div>
+    <!-- Üst bilgi çubuğu: Kredi | Çarpan | Skor -->
+    <div id="topbar">
+      <div class="tb-block">
+        <div class="tb-label">KREDİ</div>
+        <div class="tb-value" id="balance-display">1000</div>
+      </div>
+      <div class="tb-block center-block">
+        <div class="tb-label">✦ ÇARPAN ✦</div>
+        <div id="multiplier-value">1.00×</div>
+      </div>
+      <div class="tb-block">
+        <div class="tb-label">SKOR</div>
+        <div class="tb-value" id="stat-score">00</div>
+      </div>
     </div>
 
-    <!-- Canvas -->
+    <!-- Oyun alanı -->
     <div id="canvas-wrapper">
       <canvas id="game-canvas"></canvas>
 
-      <!-- Spike badge -->
+      <!-- Spike rozeti -->
       <div id="spike-badge"></div>
 
-      <!-- Overlay -->
+      <!-- Mobil çıkış butonu — sadece oyun sırasında görünür -->
+      <button id="btn-mobile-cashout" class="mobile-cashout hidden">
+        💰 ÇIKIŞ<br><span id="mobile-mult-preview">1.00×</span>
+      </button>
+
+      <!-- Tur sonu overlay -->
       <div id="overlay" class="overlay hidden">
         <div id="overlay-icon"></div>
         <div id="overlay-title"></div>
         <div id="overlay-detail"></div>
+        <div id="overlay-hint">[ BAŞLAT'A BAS ]</div>
       </div>
     </div>
 
-    <!-- Controls -->
-    <div id="controls">
-      <div class="bet-panel">
-        <div class="bet-panel-label">— INSERT BET —</div>
+    <!-- Durum mesajı -->
+    <div id="status-bar">
+      <span id="status-text">OYUNCU BİR — BAHİSİNİ GİR!</span>
+    </div>
+
+    <!-- Kontroller -->
+    <div id="ctrl-panel">
+
+      <!-- Bahis girişi -->
+      <div id="bet-panel">
+        <div class="panel-label">— BAHİS MİKTARI —</div>
         <div class="bet-input-row">
           <button class="bet-adj" id="btn-minus">◀</button>
           <input type="number" id="bet-input" value="50" min="10" max="250" step="10" />
@@ -67,24 +88,29 @@
         </div>
       </div>
 
-      <div class="action-row">
-        <button id="btn-start"   class="action-btn start-btn">▶ START</button>
-        <button id="btn-cashout" class="action-btn cashout-btn" disabled>$ CASH OUT</button>
+      <!-- Ana butonlar -->
+      <div id="action-row">
+        <button id="btn-start"   class="arcade-btn green-btn">▶ BAŞLAT</button>
+        <button id="btn-cashout" class="arcade-btn yellow-btn" disabled>$ ÇIKIŞ YAP</button>
       </div>
 
-      <div class="util-row">
-        <button id="btn-reset" class="util-btn">↺ RESET</button>
-        <span class="swipe-hint">ARROWS / SWIPE TO STEER</span>
+      <!-- Yardımcı butonlar -->
+      <div id="util-row">
+        <button id="btn-reset"    class="util-btn">↺ KREDİYİ SIFIRLA</button>
+        <button id="sound-toggle" class="util-btn">SES: AÇIK</button>
       </div>
+
     </div>
 
-    <!-- Stats -->
+    <!-- Alt istatistik çubuğu -->
     <div id="stats-bar">
-      <div class="stat"><span class="stat-label">BET</span><span id="stat-bet">---</span></div>
-      <div class="stat"><span class="stat-label">SCORE</span><span id="stat-score">0</span></div>
-      <div class="stat"><span class="stat-label">HI-SCORE</span><span id="stat-best">0</span></div>
-      <div class="stat"><span class="stat-label">SPIKES</span><span id="stat-spikes">0</span></div>
+      <div class="stat"><span class="sl">BAHİS</span><span id="stat-bet" class="sv">—</span></div>
+      <div class="stat"><span class="sl">EN İYİ</span><span id="stat-best" class="sv">00</span></div>
+      <div class="stat"><span class="sl">SPIKE</span><span id="stat-spikes" class="sv">0</span></div>
     </div>
+
+    <!-- Klavye ipucu — sadece masaüstü -->
+    <div id="keyboard-hint">YÖN TUŞLARI veya WASD • BOŞLUK = ÇIKIŞ YAP</div>
 
   </div>
 
