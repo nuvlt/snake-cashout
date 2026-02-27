@@ -1,535 +1,764 @@
 /**
- * SNAKE CASHOUT v3 – 80s Arcade Edition
+ * SNAKE CASHOUT – Türkçe Final Sürüm
  * ─────────────────────────────────────
- * RTP Math (~75%):
- *   Multiplier growth per frame (60fps):
- *     Δmult = 0.004 * (1 + foodBonus * 0.08)
+ * RTP Matematiği (~%75):
+ *   Kare başına çarpan artışı (60fps):
+ *     Δçarpan = 0.004 × (1 + yenenYiyecek × 0.08)
  *
- *   Crash probability per frame:
- *     p = 0.0026 * (multiplier ^ 1.5)
- *     (BASE_RISK slightly reduced vs vanilla to offset spike EV)
+ *   Kare başına çarpışma olasılığı:
+ *     p = 0.0026 × (çarpan ^ 1.5)
+ *     → 1×: ~%0.26/kare,  3×: ~%1.35/kare,  5×: ~%2.9/kare
  *
- *   SPIKE MECHANIC:
- *     Every food eaten → instant +0.10x multiplier jump.
- *     Visual: magenta badge popup + pixel explosion + multiplier flash.
- *     Audio: 8-bit two-tone blip.
+ *   SPIKE MEKANİĞİ:
+ *     Her yiyecek yenildiğinde anlık +0.10× çarpan artışı.
+ *     Görsel: magenta rozet açılır, çerçeve çakar, sayaç renk değiştirir.
  */
 
 'use strict';
 
+/* ───────────────────────────────
+   AYARLAR
+─────────────────────────────── */
 const CFG = {
-  STARTING_BALANCE: 1000,
-  MIN_BET:          10,
-  MAX_BET:          250,
-  GRID_COLS:        20,
-  GRID_ROWS:        16,
-  BASE_SPEED_MS:    145,
-  SPEED_INCREASE:   4,
-  MIN_SPEED_MS:     58,
-  MULT_GROWTH_BASE: 0.004,
-  MULT_FOOD_BONUS:  0.08,
-  MULT_CAP:         10.0,
-  SPIKE_AMOUNT:     0.10,
-  BASE_RISK:        0.0026,
-  RISK_EXP:         1.5,
-  BG_COLOR:         '#050508',
-  GRID_COLOR:       'rgba(0,240,255,0.06)',
-  SNAKE_COLOR:      '#00ff41',
-  FOOD_COLORS:      ['#ff2244','#ffe600','#ff00cc','#00f0ff','#ff6e00'],
+  BASLANGIC_KREDI: 1000,
+  MIN_BAHIS:       10,
+  MAX_BAHIS:       250,
+  IZGARA_SUTUN:    20,
+  IZGARA_SATIR:    16,
+
+  TEMEL_HIZ_MS:    145,
+  HIZ_ARTISI:      4,
+  MIN_HIZ_MS:      58,
+
+  CARPAN_ARTIS:    0.004,
+  YIYECEK_BONUS:   0.08,
+  SPIKE_MIKTAR:    0.10,
+  CARPAN_TAVAN:    10.0,
+
+  TEMEL_RISK:      0.0026,
+  RISK_UST:        1.5,
+
+  // Piksel paleti
+  ARKA_PLAN:       '#000000',
+  IZGARA_RENK:     '#0a1a0a',
+  YILAN_BAŞ:       '#00ff41',
+  YILAN_GÖVDE1:    '#00cc33',
+  YILAN_GÖVDE2:    '#009922',
+  GOZ_BEYAZ:       '#ffffff',
+  GOZ_BEREK:       '#000000',
+
+  YIYECEK_RENK: ['#ff2244','#ffe600','#ff00cc','#00f0ff','#ff6e00','#aa44ff'],
 };
 
-const S = { IDLE:'IDLE', RUNNING:'RUNNING', CRASHED:'CRASHED', CASHED_OUT:'CASHED_OUT' };
-let gameState   = S.IDLE;
-let balance     = CFG.STARTING_BALANCE;
-let currentBet  = 0;
-let multiplier  = 1.0;
-let foodBonus   = 0;
-let score       = 0;
-let bestScore   = 0;
-let totalSpikes = 0;
-let soundOn     = true;
+/* ───────────────────────────────
+   DURUM MAKİNESİ
+─────────────────────────────── */
+const DURUM = { BEKLEMEDE:'BEKLEMEDE', OYNANIYOR:'OYNANIYOR', CARPTI:'CARPTI', CIKIS_YAPILDI:'CIKIS_YAPILDI' };
 
-let snake        = [];
-let direction    = { x:1, y:0 };
-let nextDir      = { x:1, y:0 };
-let food         = [];
-let stepTimer    = 0;
-let lastTime     = 0;
-let animFrameId  = null;
-let stepInterval = CFG.BASE_SPEED_MS;
-let frameCount   = 0;
-let pixels       = [];
+let durum        = DURUM.BEKLEMEDE;
+let kredi        = CFG.BASLANGIC_KREDI;
+let mevcutBahis  = 0;
+let carpan       = 1.0;
+let yiyecekSayac = 0;
+let skor         = 0;
+let enIyiSkor    = 0;
+let toplamSpike  = 0;
+let sesAcik      = true;
 
+let yilan        = [];
+let yon          = { x:1, y:0 };
+let sonrakiYon   = { x:1, y:0 };
+let yiyecekler   = [];   // [{x,y,renk}]
+let adimSayac    = 0;
+let sonZaman     = 0;
+let rafId        = null;
+let adimAraligi  = CFG.TEMEL_HIZ_MS;
+let kareSayaci   = 0;
+let globalKare   = 0;
+
+let yiyecekRenkIdx = 0;
+
+/* ───────────────────────────────
+   CANVAS
+─────────────────────────────── */
 const canvas = document.getElementById('game-canvas');
 const ctx    = canvas.getContext('2d');
-let cellSize = 0;
+let H = 0; // hücre boyutu (piksel)
 
-// ── RESIZE ──────────────────────────────
-function resizeCanvas() {
-  const wrapper = document.getElementById('canvas-wrapper');
-  const w    = wrapper.clientWidth;
-  const unit = Math.floor(w / CFG.GRID_COLS);
-  canvas.width  = unit * CFG.GRID_COLS;
-  canvas.height = unit * CFG.GRID_ROWS;
-  cellSize = unit;
-  wrapper.style.height = canvas.height + 'px';
-  if (gameState !== S.RUNNING) drawIdle();
+function canvasBoyutlandir() {
+  const sarici = document.getElementById('canvas-wrapper');
+  const g = sarici.clientWidth;
+  H = Math.floor(g / CFG.IZGARA_SUTUN);
+  canvas.width  = H * CFG.IZGARA_SUTUN;
+  canvas.height = H * CFG.IZGARA_SATIR;
+  sarici.style.height = canvas.height + 'px';
+  if (durum !== DURUM.OYNANIYOR) beklemeEkrani();
 }
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener('resize', canvasBoyutlandir);
 
-// ── DRAW BACKGROUND ──────────────────────
-function drawBackground() {
-  ctx.fillStyle = CFG.BG_COLOR;
+/* ───────────────────────────────
+   ÇIZIM – ARKA PLAN
+─────────────────────────────── */
+function arkaPlaniCiz() {
+  ctx.fillStyle = CFG.ARKA_PLAN;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = CFG.GRID_COLOR;
-  for (let x = 0; x <= CFG.GRID_COLS; x++)
-    for (let y = 0; y <= CFG.GRID_ROWS; y++)
-      ctx.fillRect(x * cellSize - 0.5, y * cellSize - 0.5, 1.5, 1.5);
-  ctx.strokeStyle = 'rgba(255,230,0,0.07)';
+  // noktalı ızgara
+  ctx.fillStyle = CFG.IZGARA_RENK;
+  for (let x = 0; x < CFG.IZGARA_SUTUN; x++)
+    for (let y = 0; y < CFG.IZGARA_SATIR; y++)
+      ctx.fillRect(x * H + H/2 - 1, y * H + H/2 - 1, 2, 2);
+  // sınır
+  ctx.strokeStyle = 'rgba(0,80,0,0.6)';
   ctx.lineWidth = 1;
-  ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
+  ctx.strokeRect(0.5, 0.5, canvas.width-1, canvas.height-1);
 }
 
-// ── DRAW PIXEL CELL ──────────────────────
-function drawPixelCell(x, y, color, bevel = true) {
-  const px = x * cellSize, py = y * cellSize;
-  const pad = 1, sz = cellSize - pad * 2;
-  ctx.fillStyle = color;
-  ctx.fillRect(px + pad, py + pad, sz, sz);
-  if (bevel) {
-    ctx.fillStyle = 'rgba(255,255,255,0.22)';
-    ctx.fillRect(px + pad, py + pad, sz, 2);
-    ctx.fillRect(px + pad, py + pad, 2, sz);
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(px + pad, py + pad + sz - 2, sz, 2);
-    ctx.fillRect(px + pad + sz - 2, py + pad, 2, sz);
-  }
-}
+/* ───────────────────────────────
+   ÇIZIM – YILAN (piksel blok)
+─────────────────────────────── */
+function yilaniCiz() {
+  for (let i = yilan.length - 1; i >= 0; i--) {
+    const seg = yilan[i];
+    const px  = seg.x * H;
+    const py  = seg.y * H;
 
-// ── DRAW SNAKE ───────────────────────────
-function drawSnake() {
-  for (let i = snake.length - 1; i >= 0; i--) {
-    const seg = snake[i];
     if (i === 0) {
-      drawPixelCell(seg.x, seg.y, CFG.SNAKE_COLOR, true);
-      // highlight stripe on head
-      const px = seg.x * cellSize, py = seg.y * cellSize;
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
-      ctx.fillRect(px + 2, py + 2, cellSize - 4, Math.floor(cellSize * 0.3));
-      // eyes
-      const mid    = cellSize / 2;
-      const eSize  = Math.max(2, Math.floor(cellSize * 0.14));
-      const eOff   = Math.floor(cellSize * 0.24);
-      ctx.fillStyle = '#fff';
-      if      (direction.x ===  1) { ctx.fillRect(px+mid+eOff*0.4, py+mid-eOff, eSize, eSize); ctx.fillRect(px+mid+eOff*0.4, py+mid+eOff-eSize, eSize, eSize); }
-      else if (direction.x === -1) { ctx.fillRect(px+mid-eOff*0.4-eSize, py+mid-eOff, eSize, eSize); ctx.fillRect(px+mid-eOff*0.4-eSize, py+mid+eOff-eSize, eSize, eSize); }
-      else if (direction.y === -1) { ctx.fillRect(px+mid-eOff, py+mid-eOff*0.4-eSize, eSize, eSize); ctx.fillRect(px+mid+eOff-eSize, py+mid-eOff*0.4-eSize, eSize, eSize); }
-      else                         { ctx.fillRect(px+mid-eOff, py+mid+eOff*0.4, eSize, eSize); ctx.fillRect(px+mid+eOff-eSize, py+mid+eOff*0.4, eSize, eSize); }
+      // Baş
+      ctx.fillStyle = CFG.YILAN_BAŞ;
+      ctx.fillRect(px+1, py+1, H-2, H-2);
+
+      // Köşe parlama
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.fillRect(px+2, py+2, H-6, 2);
+      ctx.fillRect(px+2, py+2, 2, H-6);
+
+      // Gölge
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fillRect(px+H-3, py+2, 2, H-4);
+      ctx.fillRect(px+2, py+H-3, H-4, 2);
+
+      // Gözler
+      const cx = px + H/2;
+      const cy = py + H/2;
+      const go = Math.floor(H * 0.27);
+      const gf = Math.floor(H * 0.2);
+      const gr = Math.max(2, Math.floor(H * 0.11));
+      let gx1, gy1, gx2, gy2;
+      if      (yon.x ===  1) { gx1=px+H-gf-2; gy1=cy-go; gx2=px+H-gf-2; gy2=cy+go-2; }
+      else if (yon.x === -1) { gx1=px+gf;     gy1=cy-go; gx2=px+gf;     gy2=cy+go-2; }
+      else if (yon.y === -1) { gx1=cx-go; gy1=py+gf;     gx2=cx+go-2; gy2=py+gf;     }
+      else                   { gx1=cx-go; gy1=py+H-gf-2; gx2=cx+go-2; gy2=py+H-gf-2; }
+      ctx.fillStyle = CFG.GOZ_BEYAZ;
+      ctx.fillRect(gx1-gr, gy1-gr, gr*2, gr*2);
+      ctx.fillRect(gx2-gr, gy2-gr, gr*2, gr*2);
+      ctx.fillStyle = CFG.GOZ_BEREK;
+      const gp = Math.ceil(gr/2);
+      ctx.fillRect(gx1-gp, gy1-gp, gp*2, gp*2);
+      ctx.fillRect(gx2-gp, gy2-gp, gp*2, gp*2);
     } else {
-      const t = i / snake.length;
-      const g = Math.round(255 * (1 - t * 0.65));
-      drawPixelCell(seg.x, seg.y, `rgb(0,${g},${Math.round(g*0.22)})`, i < 3);
+      // Gövde: alternatif renk + opaklık azalır
+      const t    = i / yilan.length;
+      const alfa = Math.max(0.3, 1 - t * 0.68);
+      ctx.globalAlpha = alfa;
+      ctx.fillStyle   = i % 2 === 0 ? CFG.YILAN_GÖVDE1 : CFG.YILAN_GÖVDE2;
+      ctx.fillRect(px+2, py+2, H-4, H-4);
+      ctx.fillStyle = 'rgba(255,255,255,0.09)';
+      ctx.fillRect(px+3, py+3, H-8, 2);
+      ctx.globalAlpha = 1;
     }
   }
 }
 
-// ── DRAW FOOD ────────────────────────────
-function drawFood() {
-  food.forEach(f => {
-    const px  = f.x * cellSize, py = f.y * cellSize;
-    const mid = cellSize / 2;
-    const r   = Math.floor(cellSize * 0.3);
-    const blink = (frameCount + f.blinkOffset) % 40 < 28;
-    ctx.globalAlpha = blink ? 1.0 : 0.5;
-    ctx.fillStyle = f.color;
-    // diamond shape made of pixel rects
-    ctx.fillRect(px + mid - 1,     py + mid - r,     2, r * 2);
-    ctx.fillRect(px + mid - r,     py + mid - 1,     r * 2, 2);
-    ctx.fillRect(px + mid - r + 2, py + mid - r + 2, r - 2, r - 2);
-    ctx.fillRect(px + mid + 1,     py + mid - r + 2, r - 2, r - 2);
-    ctx.fillRect(px + mid - r + 2, py + mid + 1,     r - 2, r - 2);
-    ctx.fillRect(px + mid + 1,     py + mid + 1,     r - 2, r - 2);
-    if (blink) {
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.fillRect(px + mid - 1, py + mid - r + 1, 2, 2);
-    }
+/* ───────────────────────────────
+   ÇIZIM – YİYECEK (arcade jeton)
+─────────────────────────────── */
+function yiyecekleriCiz() {
+  yiyecekler.forEach(y => {
+    const px  = y.x * H;
+    const py  = y.y * H;
+    const wobble = Math.floor(globalKare / 20) % 2 === 0 ? 0 : -1;
+    const pad = Math.floor(H * 0.13);
+    const sz  = H - pad * 2;
+    const cx  = px + H/2;
+    const cy  = py + H/2 + wobble;
+
+    // dış parlama
+    ctx.fillStyle   = y.renk;
+    ctx.globalAlpha = 0.16;
+    ctx.fillRect(px, py+wobble, H, H);
     ctx.globalAlpha = 1;
+
+    // jeton gövdesi
+    ctx.fillStyle = y.renk;
+    ctx.fillRect(px+pad, py+pad+wobble, sz, sz);
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.fillRect(px+pad+2, py+pad+2+wobble, sz-4, sz-4);
+
+    // ✦ sembolü
+    ctx.fillStyle = y.renk;
+    const d = Math.max(2, Math.floor(H*0.11));
+    const a = Math.floor(H*0.28);
+    const b = Math.floor(H*0.11);
+    const k = Math.floor(H*0.17);
+    ctx.fillRect(cx-d, cy-d, d*2, d*2);
+    ctx.fillRect(cx-d, cy-a, d*2, k);
+    ctx.fillRect(cx-d, cy+b, d*2, k);
+    ctx.fillRect(cx-a, cy-d, k, d*2);
+    ctx.fillRect(cx+b, cy-d, k, d*2);
+
+    // parlaklık
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillRect(px+pad+1, py+pad+1+wobble, 2, 2);
   });
 }
 
-// ── PIXEL EXPLOSION ──────────────────────
-function spawnPixelExplosion(gx, gy, color) {
-  for (let i = 0; i < 12; i++) {
-    const angle = (Math.PI * 2 * i) / 12 + Math.random() * 0.5;
-    const speed = 1.5 + Math.random() * 3;
-    pixels.push({
-      x: gx * cellSize + cellSize / 2,
-      y: gy * cellSize + cellSize / 2,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      life: 1.0,
-      decay: 0.05 + Math.random() * 0.04,
-      size: Math.max(2, Math.floor(cellSize * 0.13)),
-      color,
-    });
-  }
-}
-
-function updatePixels() {
-  pixels = pixels.filter(p => p.life > 0);
-  pixels.forEach(p => {
-    p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.life -= p.decay;
-    ctx.globalAlpha = Math.max(0, p.life);
-    ctx.fillStyle = p.color;
-    const s = Math.ceil(p.size * p.life);
-    ctx.fillRect(Math.round(p.x), Math.round(p.y), s, s);
-  });
-  ctx.globalAlpha = 1;
-}
-
-// ── DRAW IDLE ────────────────────────────
-let idleTimer = null;
-function drawIdle() {
-  if (idleTimer) clearTimeout(idleTimer);
-  drawBackground();
-  const segs = [{x:12,y:8},{x:11,y:8},{x:10,y:8},{x:9,y:8},{x:8,y:8},{x:8,y:9},{x:8,y:10},{x:9,y:10},{x:10,y:10}];
+/* ───────────────────────────────
+   ÇIZIM – BEKLEME EKRANI
+─────────────────────────────── */
+let _beklemeTick = 0;
+function beklemeEkrani() {
+  arkaPlaniCiz();
+  // dekoratif yılan
+  const seglar = [{x:12,y:8},{x:11,y:8},{x:10,y:8},{x:9,y:8},{x:8,y:8},{x:8,y:9},{x:8,y:10},{x:9,y:10}];
   ctx.globalAlpha = 0.28;
-  segs.forEach((seg, i) => {
-    const g = i === 0 ? 255 : Math.round(255 * (1 - i / segs.length * 0.7));
-    drawPixelCell(seg.x, seg.y, i === 0 ? CFG.SNAKE_COLOR : `rgb(0,${g},${Math.round(g*0.22)})`, false);
+  seglar.forEach((s, i) => {
+    ctx.fillStyle = i === 0 ? CFG.YILAN_BAŞ : CFG.YILAN_GÖVDE1;
+    ctx.fillRect(s.x*H+1, s.y*H+1, H-2, H-2);
   });
   ctx.globalAlpha = 1;
-  if (Math.floor(Date.now() / 600) % 2 === 0) {
-    ctx.fillStyle = '#ffe600';
-    ctx.font = `${Math.max(6, Math.floor(cellSize * 0.5))}px 'Press Start 2P', monospace`;
-    ctx.textAlign = 'center';
+
+  // yanıp sönen metin
+  if (_beklemeTick % 2 === 0) {
+    ctx.fillStyle = '#ffff00';
+    ctx.font = `${Math.max(7, Math.floor(H*0.62))}px 'Press Start 2P', monospace`;
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('INSERT COIN', canvas.width / 2, canvas.height * 0.75);
+    ctx.shadowColor  = '#ffff00';
+    ctx.shadowBlur   = 10;
+    ctx.fillText('BAŞLAMAK İÇİN', canvas.width/2, canvas.height * 0.6);
+    ctx.fillText('BAHİS GİR', canvas.width/2, canvas.height * 0.6 + H * 1.4);
+    ctx.shadowBlur = 0;
   }
-  if (gameState === S.IDLE || gameState === S.CRASHED || gameState === S.CASHED_OUT) {
-    idleTimer = setTimeout(drawIdle, 600);
-  }
+  _beklemeTick++;
+  if (durum !== DURUM.OYNANIYOR) setTimeout(beklemeEkrani, 550);
 }
 
-// ── FULL FRAME ───────────────────────────
-function drawFrame() {
-  drawBackground();
-  updatePixels();
-  drawFood();
-  drawSnake();
+/* ───────────────────────────────
+   ÇIZIM – TAM KARE
+─────────────────────────────── */
+function tamKareciCiz() {
+  globalKare++;
+  arkaPlaniCiz();
+  yiyecekleriCiz();
+  yilaniCiz();
 }
 
-// ── SNAKE INIT ───────────────────────────
-function initSnake() {
-  const mx = Math.floor(CFG.GRID_COLS / 2), my = Math.floor(CFG.GRID_ROWS / 2);
-  snake = [{x:mx,y:my},{x:mx-1,y:my},{x:mx-2,y:my}];
-  direction = {x:1,y:0}; nextDir = {x:1,y:0};
+/* ───────────────────────────────
+   OYUN MANTIĞI
+─────────────────────────────── */
+function yilaniBaslat() {
+  const mx = Math.floor(CFG.IZGARA_SUTUN / 2);
+  const my = Math.floor(CFG.IZGARA_SATIR / 2);
+  yilan      = [{ x:mx, y:my }, { x:mx-1, y:my }, { x:mx-2, y:my }];
+  yon        = { x:1, y:0 };
+  sonrakiYon = { x:1, y:0 };
 }
 
-function spawnFood() {
-  while (food.length < 2) {
-    let pos, tries = 0;
+function yiyecekEkle() {
+  while (yiyecekler.length < 2) {
+    let konum, deneme = 0;
     do {
-      pos = { x: Math.floor(Math.random() * CFG.GRID_COLS), y: Math.floor(Math.random() * CFG.GRID_ROWS) };
-      tries++;
-    } while (tries < 120 && (snake.some(s => s.x === pos.x && s.y === pos.y) || food.some(f => f.x === pos.x && f.y === pos.y)));
-    const ci = Math.floor(Math.random() * CFG.FOOD_COLORS.length);
-    food.push({ ...pos, color: CFG.FOOD_COLORS[ci], blinkOffset: Math.floor(Math.random() * 40) });
+      konum = { x: Math.floor(Math.random() * CFG.IZGARA_SUTUN),
+                y: Math.floor(Math.random() * CFG.IZGARA_SATIR) };
+      deneme++;
+    } while (
+      deneme < 200 &&
+      (yilan.some(s => s.x===konum.x && s.y===konum.y) ||
+       yiyecekler.some(y => y.x===konum.x && y.y===konum.y))
+    );
+    const renk = CFG.YIYECEK_RENK[yiyecekRenkIdx % CFG.YIYECEK_RENK.length];
+    yiyecekRenkIdx++;
+    yiyecekler.push({ ...konum, renk });
   }
 }
 
-// ── EAT + SPIKE ──────────────────────────
-function eatFood(idx) {
-  const eaten = food.splice(idx, 1)[0];
-  spawnFood();
-  score++; foodBonus++; totalSpikes++;
-  stepInterval = Math.max(CFG.MIN_SPEED_MS, stepInterval - CFG.SPEED_INCREASE);
+function yiyecekYendi(yenilen) {
+  yiyecekler = yiyecekler.filter(y => y !== yenilen);
+  yiyecekEkle();
 
-  // SPIKE: instant multiplier jump
-  multiplier = Math.min(CFG.MULT_CAP, multiplier + CFG.SPIKE_AMOUNT);
+  skor++;
+  yiyecekSayac++;
+  toplamSpike++;
 
-  // Visual feedback
-  spawnPixelExplosion(snake[0].x, snake[0].y, eaten.color);
-  spawnPixelExplosion(snake[0].x, snake[0].y, '#ff00cc');
+  // ── SPIKE: anlık +0.10× ──
+  carpan = Math.min(CFG.CARPAN_TAVAN, carpan + CFG.SPIKE_MIKTAR);
+  carpanGuncelle(true);
+  spikeBadgeGoster();
+  adimAraligi = Math.max(CFG.MIN_HIZ_MS, adimAraligi - CFG.HIZ_ARTISI);
+  sesOynat('spike');
+  istatistikGuncelle();
+  mobilCarpanGuncelle();
+}
+
+function carpismayiKontrolEt() {
+  return Math.random() < CFG.TEMEL_RISK * Math.pow(carpan, CFG.RISK_UST);
+}
+
+function yilanAdimAt() {
+  yon = { ...sonrakiYon };
+  const bas    = yilan[0];
+  const yeniBas = { x: bas.x + yon.x, y: bas.y + yon.y };
+
+  // duvar çarpışması
+  if (yeniBas.x < 0 || yeniBas.x >= CFG.IZGARA_SUTUN ||
+      yeniBas.y < 0 || yeniBas.y >= CFG.IZGARA_SATIR) {
+    carptiTetikle(); return;
+  }
+  // kendine çarpma
+  if (yilan.some(s => s.x===yeniBas.x && s.y===yeniBas.y)) {
+    carptiTetikle(); return;
+  }
+
+  yilan.unshift(yeniBas);
+  const yenilen = yiyecekler.find(y => y.x===yeniBas.x && y.y===yeniBas.y);
+  if (yenilen) {
+    yiyecekYendi(yenilen);
+  } else {
+    yilan.pop();
+  }
+}
+
+/* ───────────────────────────────
+   OYUN DÖNGÜSÜ
+─────────────────────────────── */
+function oyunDongusu(zaman) {
+  if (durum !== DURUM.OYNANIYOR) return;
+
+  const dt = zaman - sonZaman;
+  sonZaman = zaman;
+  kareSayaci++;
+
+  // çarpan büyüt
+  const artis = CFG.CARPAN_ARTIS * (1 + yiyecekSayac * CFG.YIYECEK_BONUS);
+  carpan = Math.min(CFG.CARPAN_TAVAN, carpan + artis);
+  if (kareSayaci % 4 === 0) {
+    carpanGuncelle(false);
+    mobilCarpanGuncelle();
+  }
+
+  // olasılıksal çarpışma
+  if (carpismayiKontrolEt()) {
+    tamKareciCiz();
+    carptiTetikle();
+    return;
+  }
+
+  adimSayac += dt;
+  if (adimSayac >= adimAraligi) {
+    adimSayac -= adimAraligi;
+    yilanAdimAt();
+    if (durum !== DURUM.OYNANIYOR) return;
+  }
+
+  tamKareciCiz();
+  rafId = requestAnimationFrame(oyunDongusu);
+}
+
+/* ───────────────────────────────
+   ÇARPIŞMA / ÇIKIŞ
+─────────────────────────────── */
+function carptiTetikle() {
+  durum = DURUM.CARPTI;
+  cancelAnimationFrame(rafId); rafId = null;
+
+  sesOynat('carpis');
+  overlayGoster('carpis', 'OYUN BİTTİ', `${carpan.toFixed(2)}×'de ÇARPTI\n${mevcutBahis} TL KAYBETTİN`);
+  durumMesajiAyarla(`ÇARPIŞMA! ${mevcutBahis} TL KAYBETTİN. TEKRAR DENE!`);
+  document.getElementById('multiplier-value').classList.add('danger');
+  document.getElementById('btn-start').disabled   = false;
+  document.getElementById('btn-cashout').disabled = true;
+  document.getElementById('btn-cashout').classList.remove('glow');
+  mobilCashoutGizle();
+
+  canvasFlash('rgba(255,0,0,0.22)');
+  krediBlink('down');
+
+  if (skor > enIyiSkor) {
+    enIyiSkor = skor;
+    document.getElementById('hiscore-marquee').textContent = enIyiSkor;
+  }
+  istatistikGuncelle();
+}
+
+function cikisYap() {
+  if (durum !== DURUM.OYNANIYOR) return;
+  durum = DURUM.CIKIS_YAPILDI;
+  cancelAnimationFrame(rafId); rafId = null;
+
+  const odeme = Math.floor(mevcutBahis * carpan);
+  const kar   = odeme - mevcutBahis;
+  kredi += odeme;
+
+  sesOynat('cikis');
+  krediGuncelle();
+
+  overlayGoster('cikis', 'ÇIKIŞ YAPILDI!', `ÖDEME: ${odeme} TL\nKAR: +${kar} TL`);
+  durumMesajiAyarla(`KAZANDIK! ${odeme} TL ÖDEME — ${carpan.toFixed(2)}×`);
+
+  document.getElementById('btn-start').disabled   = false;
+  document.getElementById('btn-cashout').disabled = true;
+  document.getElementById('btn-cashout').classList.remove('glow');
+  mobilCashoutGizle();
 
   const mv = document.getElementById('multiplier-value');
-  mv.textContent = multiplier.toFixed(2) + 'x';
-  mv.classList.remove('spike-flash', 'pulse');
-  void mv.offsetWidth;
-  mv.classList.add('spike-flash');
+  mv.classList.remove('danger','spike-flash','tick');
+  mv.style.transform = 'scale(1.15)';
+  setTimeout(() => { mv.style.transform = ''; }, 280);
 
-  const badge = document.getElementById('spike-badge');
-  badge.textContent = `+${CFG.SPIKE_AMOUNT.toFixed(2)}x SPIKE!`;
-  badge.classList.remove('show');
-  void badge.offsetWidth;
-  badge.classList.add('show');
-  setTimeout(() => badge.classList.remove('show'), 1000);
-
-  const sub = document.getElementById('multiplier-sub');
-  sub.textContent = `SPIKE! +${CFG.SPIKE_AMOUNT.toFixed(2)}x`;
-  sub.classList.add('spike-text');
-  setTimeout(() => { if (gameState === S.RUNNING) { sub.textContent = 'CASH OUT BEFORE CRASH!'; sub.classList.remove('spike-text'); } }, 900);
-
-  playSound('spike');
-  updateStats();
+  krediBlink('up');
+  if (skor > enIyiSkor) {
+    enIyiSkor = skor;
+    document.getElementById('hiscore-marquee').textContent = enIyiSkor;
+  }
+  istatistikGuncelle();
 }
 
-// ── MOVE ─────────────────────────────────
-function moveSnake() {
-  direction = { ...nextDir };
-  const newHead = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
-  if (newHead.x < 0 || newHead.x >= CFG.GRID_COLS || newHead.y < 0 || newHead.y >= CFG.GRID_ROWS) { crash(); return; }
-  if (snake.some(s => s.x === newHead.x && s.y === newHead.y)) { crash(); return; }
-  snake.unshift(newHead);
-  const fi = food.findIndex(f => f.x === newHead.x && f.y === newHead.y);
-  if (fi !== -1) eatFood(fi); else snake.pop();
-}
+/* ───────────────────────────────
+   BAŞLAT
+─────────────────────────────── */
+function oyunaBasla() {
+  if (durum === DURUM.OYNANIYOR) return;
 
-function shouldCrash() {
-  return Math.random() < CFG.BASE_RISK * Math.pow(multiplier, CFG.RISK_EXP);
-}
+  const bahisVal = parseInt(document.getElementById('bet-input').value);
+  if (isNaN(bahisVal) || bahisVal < CFG.MIN_BAHIS || bahisVal > CFG.MAX_BAHIS) { bahisHatasi(); return; }
+  if (bahisVal > kredi) { bahisHatasi(); return; }
 
-// ── GAME LOOP ────────────────────────────
-function gameLoop(ts) {
-  if (gameState !== S.RUNNING) return;
-  const dt = ts - lastTime; lastTime = ts; frameCount++;
-  multiplier = Math.min(CFG.MULT_CAP, multiplier + CFG.MULT_GROWTH_BASE * (1 + foodBonus * CFG.MULT_FOOD_BONUS));
-  if (frameCount % 3 === 0) updateMultiplierDisplay();
-  if (shouldCrash()) { drawFrame(); crash(); return; }
-  stepTimer += dt;
-  if (stepTimer >= stepInterval) { stepTimer -= stepInterval; moveSnake(); if (gameState !== S.RUNNING) return; }
-  drawFrame();
-  animFrameId = requestAnimationFrame(gameLoop);
-}
+  mevcutBahis  = bahisVal;
+  kredi       -= mevcutBahis;
+  carpan       = 1.0;
+  yiyecekSayac = 0;
+  skor         = 0;
+  adimAraligi  = CFG.TEMEL_HIZ_MS;
+  adimSayac    = 0;
+  kareSayaci   = 0;
+  globalKare   = 0;
+  yiyecekler   = [];
+  yiyecekRenkIdx = 0;
 
-// ── CRASH / CASHOUT ──────────────────────
-function crash() {
-  gameState = S.CRASHED;
-  cancelAnimationFrame(animFrameId); animFrameId = null;
-  playSound('crash');
-  flashScreen('rgba(255,34,68,0.45)');
-  showOverlay('crash', 'GAME OVER', `CRASHED @ ${multiplier.toFixed(2)}x\nLOST ${currentBet} TL`);
-  document.getElementById('multiplier-value').classList.add('danger-mult');
-  document.getElementById('multiplier-sub').textContent = 'PRESS START TO TRY AGAIN';
-  document.getElementById('multiplier-sub').classList.remove('spike-text');
-  document.getElementById('btn-start').disabled   = false;
-  document.getElementById('btn-cashout').disabled = true;
-  document.getElementById('btn-cashout').classList.remove('glow');
-  blinkBalance('red');
-  if (score > bestScore) bestScore = score;
-  updateStats();
-  drawIdle();
-}
+  yilaniBaslat();
+  yiyecekEkle();
+  overlayGizle();
+  krediGuncelle();
+  istatistikGuncelle();
+  mobilCashoutGoster();
 
-function cashOut() {
-  if (gameState !== S.RUNNING) return;
-  gameState = S.CASHED_OUT;
-  cancelAnimationFrame(animFrameId); animFrameId = null;
-  const payout = Math.floor(currentBet * multiplier);
-  const profit = payout - currentBet;
-  balance += payout;
-  playSound('cashout');
-  updateBalanceDisplay();
-  flashScreen('rgba(0,255,65,0.22)');
-  showOverlay('cashout', 'WINNER!', `PAYOUT: ${payout} TL\nPROFIT: +${profit} TL`);
-  document.getElementById('multiplier-sub').textContent = `CASHED OUT! +${profit} TL`;
-  document.getElementById('multiplier-sub').classList.remove('spike-text');
-  document.getElementById('btn-start').disabled   = false;
-  document.getElementById('btn-cashout').disabled = true;
-  document.getElementById('btn-cashout').classList.remove('glow');
-  blinkBalance('green');
-  if (score > bestScore) bestScore = score;
-  updateStats();
-  drawIdle();
-}
-
-// ── START ────────────────────────────────
-function startGame() {
-  if (gameState === S.RUNNING) return;
-  const betVal = parseInt(document.getElementById('bet-input').value);
-  if (isNaN(betVal) || betVal < CFG.MIN_BET || betVal > CFG.MAX_BET || betVal > balance) { shakeBetInput(); return; }
-
-  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-  currentBet   = betVal;
-  balance     -= currentBet;
-  multiplier   = 1.0; foodBonus = 0; score = 0;
-  stepInterval = CFG.BASE_SPEED_MS; stepTimer = 0; frameCount = 0;
-  pixels = []; food = [];
-
-  initSnake(); spawnFood(); hideOverlay();
-  updateBalanceDisplay(); updateStats();
-
-  gameState = S.RUNNING;
+  durum = DURUM.OYNANIYOR;
   document.getElementById('btn-start').disabled   = true;
   document.getElementById('btn-cashout').disabled = false;
   document.getElementById('btn-cashout').classList.add('glow');
-  const mv = document.getElementById('multiplier-value');
-  mv.textContent = '1.00x'; mv.classList.remove('danger-mult','spike-flash','pulse');
-  document.getElementById('multiplier-sub').textContent = 'CASH OUT BEFORE CRASH!';
-  document.getElementById('multiplier-sub').classList.remove('spike-text');
 
-  lastTime = performance.now();
-  animFrameId = requestAnimationFrame(gameLoop);
+  const mv = document.getElementById('multiplier-value');
+  mv.textContent = '1.00×';
+  mv.classList.remove('danger','spike-flash','tick');
+  mv.style.transform = '';
+
+  durumMesajiAyarla('OYUN BAŞLADI! JETONLARı TOPLA — ÇARPMADAN ÖNCE ÇIKIŞ YAP!');
+
+  sonZaman = performance.now();
+  rafId    = requestAnimationFrame(oyunDongusu);
 }
 
-// ── UI ───────────────────────────────────
-function updateMultiplierDisplay() {
+/* ───────────────────────────────
+   ARAYÜZ YARDIMCILARI
+─────────────────────────────── */
+function carpanGuncelle(isSpike) {
   const mv = document.getElementById('multiplier-value');
-  mv.textContent = multiplier.toFixed(2) + 'x';
-  if (multiplier >= 6) mv.classList.add('danger-mult'); else mv.classList.remove('danger-mult');
-  const prev = multiplier - CFG.MULT_GROWTH_BASE * 3;
-  if (Math.floor(multiplier * 2) > Math.floor(prev * 2)) {
-    mv.classList.remove('pulse'); void mv.offsetWidth; mv.classList.add('pulse');
+  mv.textContent = carpan.toFixed(2) + '×';
+  if (carpan >= 6) mv.classList.add('danger');
+  else mv.classList.remove('danger');
+
+  if (isSpike) {
+    mv.classList.remove('spike-flash','tick');
+    void mv.offsetWidth;
+    mv.classList.add('spike-flash');
+  } else {
+    const onceki = carpan - CFG.CARPAN_ARTIS * 4;
+    if (Math.floor(carpan * 2) > Math.floor(onceki * 2)) {
+      mv.classList.remove('tick');
+      void mv.offsetWidth;
+      mv.classList.add('tick');
+    }
   }
 }
 
-function updateBalanceDisplay() {
-  document.getElementById('balance-display').textContent = balance.toLocaleString('tr-TR') + ' TL';
+function mobilCarpanGuncelle() {
+  const el = document.getElementById('mobile-mult-preview');
+  if (el) el.textContent = carpan.toFixed(2) + '×';
 }
 
-function updateStats() {
-  document.getElementById('stat-bet').textContent    = currentBet ? currentBet + ' TL' : '---';
-  document.getElementById('stat-score').textContent  = score;
-  document.getElementById('stat-best').textContent   = bestScore;
-  document.getElementById('stat-spikes').textContent = totalSpikes;
+function mobilCashoutGoster() {
+  document.getElementById('btn-mobile-cashout').classList.remove('hidden');
+}
+function mobilCashoutGizle() {
+  document.getElementById('btn-mobile-cashout').classList.add('hidden');
 }
 
-function showOverlay(type, title, detail) {
-  const el = document.getElementById('overlay');
-  el.className = 'overlay ' + (type === 'crash' ? 'crash-overlay' : 'cashout-overlay');
-  document.getElementById('overlay-icon').textContent  = type === 'crash' ? '💀' : '🏆';
-  document.getElementById('overlay-title').textContent = title;
-  document.getElementById('overlay-detail').innerHTML  = detail.replace(/\n/g, '<br>');
+function spikeBadgeGoster() {
+  const badge = document.getElementById('spike-badge');
+  badge.innerHTML = `+${CFG.SPIKE_MIKTAR.toFixed(2)}×<br>SPIKE!`;
+  badge.classList.remove('show');
+  void badge.offsetWidth;
+  badge.classList.add('show');
+  setTimeout(() => badge.classList.remove('show'), 900);
+
+  const sarici = document.getElementById('canvas-wrapper');
+  sarici.classList.add('spike-border');
+  setTimeout(() => sarici.classList.remove('spike-border'), 420);
 }
 
-function hideOverlay() {
+function durumMesajiAyarla(metin) {
+  document.getElementById('status-text').textContent = metin;
+}
+
+function krediGuncelle() {
+  document.getElementById('balance-display').textContent = kredi.toLocaleString('tr-TR');
+}
+
+function istatistikGuncelle() {
+  document.getElementById('stat-score').textContent  = String(skor).padStart(2, '0');
+  document.getElementById('stat-bet').textContent    = mevcutBahis ? mevcutBahis + ' TL' : '—';
+  document.getElementById('stat-best').textContent   = String(enIyiSkor).padStart(2, '0');
+  document.getElementById('stat-spikes').textContent = toplamSpike;
+}
+
+function overlayGoster(tip, baslik, detay) {
+  const overlay = document.getElementById('overlay');
+  overlay.className = 'overlay';
+  const ikon  = document.getElementById('overlay-icon');
+  const bas   = document.getElementById('overlay-title');
+  const det   = document.getElementById('overlay-detail');
+  if (tip === 'carpis') {
+    ikon.textContent = '💀';
+    bas.style.color  = '#ff2020';
+    bas.style.textShadow = '0 0 14px #ff2020';
+  } else {
+    ikon.textContent = '★';
+    bas.style.color  = '#ffff00';
+    bas.style.textShadow = '0 0 14px #ffff00';
+  }
+  bas.textContent = baslik;
+  det.textContent = detay;
+  overlay.classList.remove('hidden');
+}
+
+function overlayGizle() {
   document.getElementById('overlay').className = 'overlay hidden';
 }
 
-function flashScreen(color) {
+function canvasFlash(renk) {
   let a = 0.5;
-  function fade() {
-    ctx.fillStyle = color; ctx.globalAlpha = a;
+  const adim = () => {
+    ctx.fillStyle = renk.replace('0.22', a.toFixed(2));
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.globalAlpha = 1; a -= 0.06;
-    if (a > 0) requestAnimationFrame(fade);
-  }
-  requestAnimationFrame(fade);
+    a -= 0.055;
+    if (a > 0) requestAnimationFrame(adim);
+  };
+  requestAnimationFrame(adim);
 }
 
-function blinkBalance(type) {
+function krediBlink(yon) {
   const el = document.getElementById('balance-display');
-  el.classList.remove('blink-green','blink-red'); void el.offsetWidth;
-  el.classList.add(type === 'green' ? 'blink-green' : 'blink-red');
-  setTimeout(() => el.classList.remove('blink-green','blink-red'), 600);
+  el.classList.remove('blink-up','blink-down');
+  void el.offsetWidth;
+  el.classList.add(yon === 'up' ? 'blink-up' : 'blink-down');
+  setTimeout(() => el.classList.remove('blink-up','blink-down'), 600);
 }
 
-function shakeBetInput() {
+function bahisHatasi() {
   const el = document.getElementById('bet-input');
-  el.style.borderColor = '#ff2244'; el.style.boxShadow = '0 0 12px rgba(255,34,68,0.5)';
-  setTimeout(() => { el.style.borderColor = ''; el.style.boxShadow = ''; }, 700);
+  el.style.borderColor = '#ff2020';
+  el.style.color       = '#ff2020';
+  el.style.textShadow  = '0 0 10px #ff2020';
+  setTimeout(() => { el.style.borderColor=''; el.style.color=''; el.style.textShadow=''; }, 700);
 }
 
-// ── SOUND ────────────────────────────────
-let audioCtx = null;
-function getAC() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  return audioCtx;
+function presetVurgula(deger) {
+  document.querySelectorAll('.preset-btn').forEach(b =>
+    b.classList.toggle('active', parseInt(b.dataset.amount) === deger));
 }
 
-function playSound(type) {
-  if (!soundOn) return;
+/* ───────────────────────────────
+   SES MOTORU (Web Audio API)
+─────────────────────────────── */
+let sesKonteksi = null;
+function sesAl() {
+  if (!sesKonteksi) sesKonteksi = new (window.AudioContext || window.webkitAudioContext)();
+  return sesKonteksi;
+}
+
+function sesOynat(tip) {
+  if (!sesAcik) return;
   try {
-    const a = getAC();
-    if (type === 'spike') {
-      [440, 880].forEach((freq, i) => {
+    const a = sesAl();
+    if (tip === 'spike') {
+      // 8-bit çift blip
+      [440, 880].forEach((frek, i) => {
         const o = a.createOscillator(), g = a.createGain();
         o.connect(g); g.connect(a.destination);
         o.type = 'square';
-        o.frequency.setValueAtTime(freq, a.currentTime + i * 0.06);
-        g.gain.setValueAtTime(0.12, a.currentTime + i * 0.06);
-        g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + i * 0.06 + 0.09);
-        o.start(a.currentTime + i * 0.06); o.stop(a.currentTime + i * 0.06 + 0.09);
+        o.frequency.setValueAtTime(frek, a.currentTime + i*0.055);
+        g.gain.setValueAtTime(0.11, a.currentTime + i*0.055);
+        g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + i*0.055 + 0.09);
+        o.start(a.currentTime + i*0.055); o.stop(a.currentTime + i*0.055 + 0.09);
       });
-    } else if (type === 'crash') {
-      const o = a.createOscillator(), g = a.createGain();
-      o.connect(g); g.connect(a.destination);
-      o.type = 'sawtooth';
-      o.frequency.setValueAtTime(180, a.currentTime);
-      o.frequency.exponentialRampToValueAtTime(30, a.currentTime + 0.5);
-      g.gain.setValueAtTime(0.3, a.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.5);
-      o.start(a.currentTime); o.stop(a.currentTime + 0.5);
-    } else if (type === 'cashout') {
-      [262, 330, 392, 523, 659].forEach((f, i) => {
+    } else if (tip === 'carpis') {
+      // İniş gürültüsü
+      const buf = a.createBuffer(1, a.sampleRate*0.35, a.sampleRate);
+      const veri = buf.getChannelData(0);
+      for (let i = 0; i < veri.length; i++) veri[i] = (Math.random()*2-1) * (1-i/veri.length);
+      const src = a.createBufferSource(), g = a.createGain();
+      src.buffer = buf; src.connect(g); g.connect(a.destination);
+      g.gain.setValueAtTime(0.28, a.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, a.currentTime+0.35);
+      src.start(a.currentTime);
+
+      const o2 = a.createOscillator(), g2 = a.createGain();
+      o2.connect(g2); g2.connect(a.destination);
+      o2.type = 'square';
+      o2.frequency.setValueAtTime(110, a.currentTime);
+      o2.frequency.exponentialRampToValueAtTime(28, a.currentTime+0.32);
+      g2.gain.setValueAtTime(0.22, a.currentTime);
+      g2.gain.exponentialRampToValueAtTime(0.001, a.currentTime+0.32);
+      o2.start(a.currentTime); o2.stop(a.currentTime+0.32);
+    } else if (tip === 'cikis') {
+      // 8-bit zafer fanfarı
+      [262,330,392,523,659].forEach((frek, i) => {
         const o = a.createOscillator(), g = a.createGain();
         o.connect(g); g.connect(a.destination);
         o.type = 'square';
-        o.frequency.setValueAtTime(f, a.currentTime);
-        g.gain.setValueAtTime(0, a.currentTime + i * 0.07);
-        g.gain.linearRampToValueAtTime(0.14, a.currentTime + i * 0.07 + 0.03);
-        g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + i * 0.07 + 0.12);
-        o.start(a.currentTime + i * 0.07); o.stop(a.currentTime + i * 0.07 + 0.12);
+        o.frequency.setValueAtTime(frek, a.currentTime+i*0.07);
+        g.gain.setValueAtTime(0, a.currentTime+i*0.07);
+        g.gain.linearRampToValueAtTime(0.13, a.currentTime+i*0.07+0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, a.currentTime+i*0.07+0.12);
+        o.start(a.currentTime+i*0.07); o.stop(a.currentTime+i*0.07+0.12);
       });
     }
   } catch(e) {}
 }
 
-// ── INPUT ────────────────────────────────
+/* ───────────────────────────────
+   GİRİŞ — KLAVYE
+─────────────────────────────── */
 document.addEventListener('keydown', e => {
-  if (gameState !== S.RUNNING) return;
-  const map = { ArrowUp:{x:0,y:-1},ArrowDown:{x:0,y:1},ArrowLeft:{x:-1,y:0},ArrowRight:{x:1,y:0},w:{x:0,y:-1},s:{x:0,y:1},a:{x:-1,y:0},d:{x:1,y:0} };
-  const d = map[e.key]; if (!d) return;
-  if (d.x !== 0 && d.x === -direction.x) return;
-  if (d.y !== 0 && d.y === -direction.y) return;
-  nextDir = d;
-  if (e.key.startsWith('Arrow')) e.preventDefault();
+  // Yön tuşları: her zaman kaydırmayı engelle (oyun dışında da)
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) {
+    e.preventDefault();
+  }
+
+  if (durum !== DURUM.OYNANIYOR) return;
+
+  // BOŞLUK = çıkış yap
+  if (e.key === ' ') {
+    cikisYap();
+    return;
+  }
+
+  const harita = {
+    ArrowUp:    {x:0,y:-1}, ArrowDown:  {x:0,y:1},
+    ArrowLeft:  {x:-1,y:0}, ArrowRight: {x:1,y:0},
+    w:{x:0,y:-1}, s:{x:0,y:1}, a:{x:-1,y:0}, d:{x:1,y:0},
+  };
+  const nd = harita[e.key];
+  if (!nd) return;
+  if (nd.x !== 0 && nd.x === -yon.x) return;
+  if (nd.y !== 0 && nd.y === -yon.y) return;
+  sonrakiYon = nd;
 });
 
-let touchStart = null;
-canvas.addEventListener('touchstart', e => { touchStart = { x:e.touches[0].clientX, y:e.touches[0].clientY }; }, { passive:true });
+/* ───────────────────────────────
+   GİRİŞ — DOKUNMA (sayfa kaydırmayı engelle)
+─────────────────────────────── */
+let dokunmaBaslangici = null;
+
+// touchstart: passive:false ile sayfa kaydırmasını engelleyebiliyoruz
+canvas.addEventListener('touchstart', e => {
+  // Oyun sırasında sayfanın scroll'ünü tamamen durdur
+  if (durum === DURUM.OYNANIYOR) e.preventDefault();
+  dokunmaBaslangici = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  // Oyun sırasında scroll'ü durdur
+  if (durum === DURUM.OYNANIYOR) e.preventDefault();
+}, { passive: false });
+
 canvas.addEventListener('touchend', e => {
-  if (!touchStart || gameState !== S.RUNNING) return;
-  const dx = e.changedTouches[0].clientX - touchStart.x;
-  const dy = e.changedTouches[0].clientY - touchStart.y;
+  if (!dokunmaBaslangici || durum !== DURUM.OYNANIYOR) return;
+  const dx = e.changedTouches[0].clientX - dokunmaBaslangici.x;
+  const dy = e.changedTouches[0].clientY - dokunmaBaslangici.y;
   if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-  let nd = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? {x:1,y:0} : {x:-1,y:0}) : (dy > 0 ? {x:0,y:1} : {x:0,y:-1});
-  if (nd.x !== 0 && nd.x === -direction.x) return;
-  if (nd.y !== 0 && nd.y === -direction.y) return;
-  nextDir = nd; touchStart = null;
-}, { passive:true });
 
-// ── BUTTONS ──────────────────────────────
-document.getElementById('btn-start').addEventListener('click', startGame);
-document.getElementById('btn-cashout').addEventListener('click', cashOut);
+  let nd;
+  if (Math.abs(dx) > Math.abs(dy)) nd = dx > 0 ? {x:1,y:0} : {x:-1,y:0};
+  else nd = dy > 0 ? {x:0,y:1} : {x:0,y:-1};
+
+  if (nd.x !== 0 && nd.x === -yon.x) return;
+  if (nd.y !== 0 && nd.y === -yon.y) return;
+  sonrakiYon = nd;
+  dokunmaBaslangici = null;
+}, { passive: true });
+
+// Tüm sayfa için de scroll engelleyelim (gövde üzerinde swipe)
+document.body.addEventListener('touchmove', e => {
+  if (durum === DURUM.OYNANIYOR) e.preventDefault();
+}, { passive: false });
+
+/* ───────────────────────────────
+   BUTONLAR
+─────────────────────────────── */
+document.getElementById('btn-start').addEventListener('click', oyunaBasla);
+document.getElementById('btn-cashout').addEventListener('click', cikisYap);
+document.getElementById('btn-mobile-cashout').addEventListener('click', cikisYap);
+
 document.getElementById('btn-reset').addEventListener('click', () => {
-  if (gameState === S.RUNNING) return;
-  balance = CFG.STARTING_BALANCE; updateBalanceDisplay(); blinkBalance('green');
+  if (durum === DURUM.OYNANIYOR) return;
+  kredi = CFG.BASLANGIC_KREDI;
+  krediGuncelle();
+  krediBlink('up');
+  durumMesajiAyarla('KREDİ 1000 TL\'YE SIFIRLANDIKTI. KOLAY GELSİN!');
 });
+
 document.getElementById('btn-minus').addEventListener('click', () => {
   const inp = document.getElementById('bet-input');
-  const v = Math.max(CFG.MIN_BET, (parseInt(inp.value)||50) - 10);
-  inp.value = v; highlightPreset(v);
+  const v   = Math.max(CFG.MIN_BAHIS, (parseInt(inp.value)||50) - 10);
+  inp.value = v; presetVurgula(v);
 });
 document.getElementById('btn-plus').addEventListener('click', () => {
   const inp = document.getElementById('bet-input');
-  const v = Math.min(CFG.MAX_BET, (parseInt(inp.value)||50) + 10);
-  inp.value = v; highlightPreset(v);
+  const v   = Math.min(CFG.MAX_BAHIS, (parseInt(inp.value)||50) + 10);
+  inp.value = v; presetVurgula(v);
 });
-document.querySelectorAll('.preset-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const amt = parseInt(btn.dataset.amount);
-    document.getElementById('bet-input').value = amt; highlightPreset(amt);
+document.querySelectorAll('.preset-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    const v = parseInt(b.dataset.amount);
+    document.getElementById('bet-input').value = v;
+    presetVurgula(v);
   });
 });
-document.getElementById('bet-input').addEventListener('input', () => { highlightPreset(parseInt(document.getElementById('bet-input').value)); });
-function highlightPreset(val) { document.querySelectorAll('.preset-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.amount) === val)); }
-document.getElementById('sound-toggle').addEventListener('click', () => {
-  soundOn = !soundOn; document.getElementById('sound-toggle').textContent = soundOn ? 'SFX:ON' : 'SFX:OFF';
+document.getElementById('bet-input').addEventListener('input', () => {
+  presetVurgula(parseInt(document.getElementById('bet-input').value));
 });
 
-// ── INIT ─────────────────────────────────
-resizeCanvas();
-updateBalanceDisplay();
-updateStats();
-highlightPreset(50);
+document.getElementById('sound-toggle').addEventListener('click', () => {
+  sesAcik = !sesAcik;
+  document.getElementById('sound-toggle').textContent = sesAcik ? 'SES: AÇIK' : 'SES: KAPALI';
+});
+
+/* ───────────────────────────────
+   BAŞLATMA
+─────────────────────────────── */
+canvasBoyutlandir();
+krediGuncelle();
+istatistikGuncelle();
+presetVurgula(50);
+// beklemeEkrani() kendi döngüsünü çalıştırıyor
