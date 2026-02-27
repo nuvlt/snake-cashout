@@ -3,48 +3,45 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>🐍 Snake Cashout</title>
+  <title>🐍 SNAKE CASHOUT</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+
+  <!-- CRT scanline overlay -->
+  <div id="crt-overlay"></div>
+
   <div id="app">
 
     <!-- Header -->
     <header id="header">
       <div class="header-logo">
-        <span class="logo-snake">🐍</span>
-        <span class="logo-text-snake">SNAKE</span>
-        <span class="logo-text-rest">&nbsp;CASHOUT</span>
+        <span class="logo-icon">👾</span>
+        <span class="logo-main">SNAKE</span>
+        <span class="logo-sub">CASHOUT</span>
       </div>
       <div class="header-balance">
-        <span class="balance-label">Balance</span>
-        <span id="balance-display">1,000 TL</span>
+        <span class="balance-label">CREDITS</span>
+        <span id="balance-display">1000 TL</span>
       </div>
-      <button id="sound-toggle" class="icon-btn" title="Toggle Sound">🔊</button>
+      <button id="sound-toggle" class="icon-btn">SFX:ON</button>
     </header>
 
-    <!-- Multiplier Banner -->
+    <!-- Multiplier -->
     <div id="multiplier-banner">
-      <div id="multiplier-label">MULTIPLIER</div>
+      <div id="multiplier-label">✦ MULTIPLIER ✦</div>
       <div id="multiplier-value">1.00x</div>
-      <div id="multiplier-sub">Place your bet and press START!</div>
+      <div id="multiplier-sub">INSERT COIN TO PLAY</div>
     </div>
 
     <!-- Canvas -->
     <div id="canvas-wrapper">
       <canvas id="game-canvas"></canvas>
 
-      <!-- Combo streak dots (top-right corner) -->
-      <div id="combo-streak">
-        <div class="streak-dot" id="dot-1"></div>
-        <div class="streak-dot" id="dot-2"></div>
-        <div class="streak-dot" id="dot-3"></div>
-      </div>
+      <!-- Spike badge -->
+      <div id="spike-badge"></div>
 
-      <!-- Combo badge popup -->
-      <div id="combo-badge">🔥 COMBO! +0.15x</div>
-
-      <!-- End-of-round overlay -->
+      <!-- Overlay -->
       <div id="overlay" class="overlay hidden">
         <div id="overlay-icon"></div>
         <div id="overlay-title"></div>
@@ -54,12 +51,12 @@
 
     <!-- Controls -->
     <div id="controls">
-      <div class="bet-row glass-card">
-        <label for="bet-input">Bet Amount (TL)</label>
-        <div class="bet-input-group">
-          <button class="bet-adj" id="btn-minus">−</button>
+      <div class="bet-panel">
+        <div class="bet-panel-label">— INSERT BET —</div>
+        <div class="bet-input-row">
+          <button class="bet-adj" id="btn-minus">◀</button>
           <input type="number" id="bet-input" value="50" min="10" max="250" step="10" />
-          <button class="bet-adj" id="btn-plus">+</button>
+          <button class="bet-adj" id="btn-plus">▶</button>
         </div>
         <div class="bet-presets">
           <button class="preset-btn" data-amount="10">10</button>
@@ -71,37 +68,26 @@
       </div>
 
       <div class="action-row">
-        <button id="btn-start" class="action-btn start-btn">▶ START</button>
-        <button id="btn-cashout" class="action-btn cashout-btn" disabled>💰 CASH OUT</button>
+        <button id="btn-start"   class="action-btn start-btn">▶ START</button>
+        <button id="btn-cashout" class="action-btn cashout-btn" disabled>$ CASH OUT</button>
       </div>
 
       <div class="util-row">
-        <button id="btn-reset" class="util-btn">↺ Reset Balance</button>
-        <div id="swipe-hint" class="swipe-hint">↑↓←→ or swipe to steer</div>
+        <button id="btn-reset" class="util-btn">↺ RESET</button>
+        <span class="swipe-hint">ARROWS / SWIPE TO STEER</span>
       </div>
     </div>
 
-    <!-- Stats Bar -->
+    <!-- Stats -->
     <div id="stats-bar">
-      <div class="stat">
-        <span class="stat-label">Current Bet</span>
-        <span id="stat-bet">—</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Score</span>
-        <span id="stat-score">0</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Best</span>
-        <span id="stat-best">0</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Combos</span>
-        <span id="stat-combos">0</span>
-      </div>
+      <div class="stat"><span class="stat-label">BET</span><span id="stat-bet">---</span></div>
+      <div class="stat"><span class="stat-label">SCORE</span><span id="stat-score">0</span></div>
+      <div class="stat"><span class="stat-label">HI-SCORE</span><span id="stat-best">0</span></div>
+      <div class="stat"><span class="stat-label">SPIKES</span><span id="stat-spikes">0</span></div>
     </div>
 
   </div>
+
   <script src="script.js"></script>
 </body>
 </html>
